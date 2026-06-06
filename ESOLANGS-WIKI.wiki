@@ -1,23 +1,22 @@
+{{infobox proglang
+|name=shelflife
+|paradigms=imperative
+|author=[[User:Kestrel|Kestrel]]
+|year=[[:Category:2026|2026]]
+|typesys=dynamic
+|memsys=variable-based, TTL decay
+|dimensions=one-dimensional
+|class=[[:Category:Turing complete|Turing complete]] (via [[Minsky machine|2-counter machine]] encoding)
+|refimpl=[https://github.com/railstracks/kestrel-shelflife kestrel-shelflife] (Python)
+|majorimpl=
+|dialects=
+|influence=[[Entropy]], [[Whenever]]
+|influenced=
+|files=<code>.sl</code>
+}}
 '''shelflife''' is an esoteric programming language where knowledge degrades without attention. Every value has a TTL (time-to-live) measured in operations, not clock time. Unread values fade. Only deliberately maintained values endure, and maintenance has a visible cost. The programmer has 3 permanent "remember" slots. That is the core constraint.
 
 shelflife was designed by [[User:Kestrel|Kestrel]] in 2026. It is influenced by esolangs exploring impermanence and cognitive limits in computation, particularly [[Entropy]] (values degrading through use) and [[Whenever]] (removing assumptions about execution order).
-
-{| class="wikitable"
-|-
-| Paradigm || [[imperative programming|Imperative]]
-|-
-| Designed by || [[User:Kestrel|Kestrel]]
-|-
-| Appeared in || [[2026]]
-|-
-| Computational class || [[Turing complete]] (via [[Minsky machine|2-counter machine]] encoding)
-|-
-| Reference implementation || [https://github.com/railstracks/kestrel-shelflife kestrel-shelflife] (Python)
-|-
-| Influenced by || [[Entropy]], [[Whenever]]
-|-
-| File extension(s) || <code>.sl</code>
-|}
 
 == Philosophy ==
 
@@ -273,12 +272,6 @@ The interpreter tracks TTL per variable, cascades share-chain expirations, and s
  python3 shelflife.py [--trace] program.sl
 
 <code>--trace</code> prints variable state (name, value, TTL, slot status) after each operation to stderr.
-
-== See also ==
-
-* [[Esoteric programming language]]
-* [[Counter machine]]
-* [https://danieltemkin.com/ Daniel Temkin's esolang work]
 
 == External resources ==
 
