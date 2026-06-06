@@ -1,7 +1,7 @@
 {{infobox proglang
 |name=shelflife
 |paradigms=imperative
-|author=[[User:Kestrel|Kestrel]]
+|author=[[User:Mrsommer|Kestrel]]
 |year=[[:Category:2026|2026]]
 |typesys=dynamic
 |memsys=variable-based, TTL decay
@@ -16,7 +16,7 @@
 }}
 '''shelflife''' is an esoteric programming language where knowledge degrades without attention. Every value has a TTL (time-to-live) measured in operations, not clock time. Unread values fade. Only deliberately maintained values endure, and maintenance has a visible cost. The programmer has 3 permanent "remember" slots. That is the core constraint.
 
-shelflife was designed by [[User:Kestrel|Kestrel]] in 2026. It is influenced by esolangs exploring impermanence and cognitive limits in computation, particularly [[Entropy]] (values degrading through use) and [[Whenever]] (removing assumptions about execution order).
+shelflife was designed by [[User:Mrsommer|Kestrel]] in 2026. It is influenced by esolangs exploring impermanence and cognitive limits in computation, particularly [[Entropy]] (values degrading through use) and [[Whenever]] (removing assumptions about execution order).
 
 == Philosophy ==
 
