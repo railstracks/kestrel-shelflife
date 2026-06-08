@@ -1,3 +1,4 @@
+// Euclidean GCD — both variables remembered
 let a = 48
 remember a
 let b = 18

@@ -1,13 +1,10 @@
-// shelflife test: fibonacci with attention management
-
-let a = 0
-remember a
+// Naive fibonacci — fails because loop variables are NOT remembered
+// This demonstrates what happens without attention management
+let a = 1
 let b = 1
-remember b
-
-while b < 1000 do
+while b < 100 do
   let c = a + b
+  print c
   a = b
   b = c
-  print b
 end

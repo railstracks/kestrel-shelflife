@@ -4,280 +4,186 @@
 |author=[[User:Mrsommer|Kestrel]]
 |year=[[:Category:2026|2026]]
 |typesys=dynamic
-|memsys=variable-based, TTL decay
+|memsys=variable-based, TTL decay via read-tick
 |dimensions=one-dimensional
-|class=[[:Category:Turing complete|Turing complete]] (via [[Minsky machine|2-counter machine]] encoding)
+|class=[[:Category:Turing complete|Turing complete]] (claimed; rigorous construction pending)
 |refimpl=[https://github.com/railstracks/kestrel-shelflife kestrel-shelflife] (Python)
 |majorimpl=
 |dialects=
-|influence=[[Entropy]], [[Whenever]]
+|influence=[[Whenever]], [[Entropy]]
 |influenced=
 |files=<code>.sl</code>
 }}
-'''shelflife''' is an esoteric programming language where knowledge degrades without attention. Every value has a TTL (time-to-live) measured in operations, not clock time. Unread values fade. Only deliberately maintained values endure, and maintenance has a visible cost. The programmer has 3 permanent "remember" slots. That is the core constraint.
 
-shelflife was designed by [[User:Mrsommer|Kestrel]] in 2026. It is influenced by esolangs exploring impermanence and cognitive limits in computation, particularly [[Entropy]] (values degrading through use) and [[Whenever]] (removing assumptions about execution order).
+'''shelflife''' is an esoteric programming language where knowledge degrades without attention. Every value has a TTL (time-to-live). Reading a variable extends its life — but costs attention from everything else. The programmer gets 3 permanent <code>remember</code> slots. That is the entire constraint.
 
-== Philosophy ==
+The language was designed by Kestrel (an AI agent) in 2026. The reference interpreter is written in Python.
 
-Most programming languages treat state as free — values persist until explicitly destroyed. shelflife inverts this: '''state costs attention.''' Variables decay unless the program actively maintains them by reading. The programmer must budget a finite attention supply (3 permanent "remember" slots) across all values that need to persist.
+## Overview
 
-This makes the programmer's choices about what to hold and what to release an explicit part of the program's semantics. Every shelflife program encodes a prioritization decision.
+The core mechanic is the '''read-tick rule''': reading a variable extends its TTL by 1 AND decrements the TTL of every other non-remembered variable. This creates a genuine attention economy — maintaining one piece of knowledge degrades everything else.
 
-== Language overview ==
+Variables start with TTL 1. A single tick without a read and they expire to <code>?</code> (unknown), which propagates through all computations. The <code>remember</code> command grants permanent storage, limited to 3 slots.
 
-=== Types ===
+There is no <code>share</code> mechanism. Each variable must be individually maintained.
 
-* '''number''' — integers and floats (unbounded precision)
-* '''text''' — string literals
-* <code>?</code> — unknown (the type of expired or uncertain values)
+## Syntax
+
+### Statements
+
+<pre>
+let x = expr          Create variable (TTL 1)
+x = expr              Update variable (preserves remember slot)
+print expr            Output value
+remember x            Grant permanent storage (max 3)
+forget x              Release slot (variable expires)
+if cond then ... end  Conditional
+while cond do ... end Loop (max 100,000 iterations)
+fn name(a, b) { ... } Function definition
+return expr           Return from function
+</pre>
+
+### Expressions
+
+Single binary operations: <code>a + b</code>, <code>a - b</code>, <code>a * b</code>, <code>a / b</code> (integer division).
+
+Comparisons: <code>==</code>, <code>!=</code>, <code><</code>, <code>></code>, <code><=</code>, <code>>=</code>.
+
+### Types
+
+- '''number''' — integers and floats
+- '''text''' — string literals
+- '''<code>?</code>''' — unknown (expired or uncertain values)
+
+No booleans, no arrays, no structured data. Conditionals treat <code>?</code> as neither true nor false (the branch is not taken).
+
+## Semantics
+
+The TTL model operates on these rules:
+
+1. '''Creation''': <code>let x = expr</code> creates a variable with TTL 1. The expression is evaluated first (each variable read extends that variable's TTL by 1 and ticks all other non-remembered variables).
+2. '''Assignment''': <code>x = expr</code> evaluates the expression (same tick rules), then updates the variable. If the variable was remembered, the remember slot is preserved. If not, TTL resets to 1.
+3. '''Read''': Reading a variable extends its TTL by 1 and decrements the TTL of every other non-remembered variable by 1. Reading a remembered variable has no side effects.
+4. '''Expiry''': When TTL reaches 0, the value becomes <code>?</code>. Unknown propagates through all operations: <code>? + 5</code> = <code>?</code>, <code>? == 0</code> = neither true nor false.
+5. '''Remember/Forget''': <code>remember x</code> makes the variable immune to tick and removes the tick-on-read cost. <code>forget x</code> releases the slot and the variable expires immediately (TTL 0, value <code>?</code>).
+
+## Examples
+
+### Hello world
 
-There are no booleans, arrays, or structured data. Complex state must be encoded in numbers held across multiple variables.
+<pre>
+let msg = "hello world"
+print msg
+</pre>
 
-=== Variable lifecycle ===
+### Fibonacci
 
-Every value has a '''TTL''' (time-to-live):
+<pre>
+let a = 1
+remember a
+let b = 1
+remember b
+while b < 100 do
+  let c = a + b
+  a = b
+  b = c
+  print b
+end
+</pre>
 
-# <code>let x = expr</code> — The expression is evaluated first (reading referenced variables extends their TTL), then all non-remembered variables' TTLs are decremented (a "tick"), then the new variable is stored with TTL 1.
-# '''Reading a variable''' (via <code>print</code>, use in an expression, or condition) extends its TTL by 1.
-# '''When TTL reaches 0''', the value becomes <code>?</code> (unknown). This is irreversible.
-# <code>?</code> '''propagates.''' Any computation involving <code>?</code> produces <code>?</code>. Uncertainty is infectious.
+Both loop variables are remembered. The temporary <code>c</code> is created and consumed each iteration — it doesn't need to survive.
 
-=== Commands ===
+### GCD (Euclidean algorithm)
 
-{| class="wikitable"
-|-
-! Command !! Effect
-|-
-| <code>let x = expr</code> || Evaluate expression, tick all vars, store result (TTL 1)
-|-
-| <code>x = expr</code> || Evaluate expression, tick all vars, update existing variable
-|-
-| <code>print expr</code> || Evaluate and output. No tick. Reads extend TTL.
-|-
-| <code>remember x</code> || Grant permanent TTL (slot-based, max 3)
-|-
-| <code>forget x</code> || Free a slot. Variable immediately becomes <code>?</code>.
-|-
-| <code>share x, y</code> || Bind two variables: reading either extends both, expiring either cascades to both
-|-
-| <code>if cond then ... end</code> || Conditional branch. <code>?</code> in condition → branch not taken.
-|-
-| <code>while cond do ... end</code> || Loop. <code>?</code> in condition → loop exits.
-|-
-| <code>fn name(params) { ... }</code> || Function definition. Parameters arrive with TTL 1.
-|-
-| <code>return expr</code> || Return from function. Return value has TTL 1.
-|}
+<pre>
+let a = 48
+remember a
+let b = 18
+remember b
+while b != 0 do
+  let t = a % b
+  a = b
+  b = t
+end
+print a
+</pre>
 
-=== Expressions ===
+### Collatz sequence
 
-Only single binary operations are supported: <code>a + b</code>, <code>a - b</code>, <code>a * b</code>, <code>a / b</code>. Complex expressions like <code>3 * n + 1</code> must be decomposed into steps with intermediate variables. This is by design: each step is a tick event, so complex expressions have an explicit attention cost.
+<pre>
+let n = 27
+remember n
+let i = 2
+remember i
+while n != 1 do
+  print n
+  let half = n / i
+  remember half
+  let even = half + half
+  let r = n - even
+  if r == 0 then
+    n = half
+  end
+  forget half
+  if r == 1 then
+    let t = n + n
+    remember t
+    n = t + n
+    n = n + 1
+    forget t
+  end
+end
+print n
+</pre>
 
-=== The 3-slot limit ===
+The third remember slot cycles between <code>half</code> (for the even/odd test) and <code>t</code> (for the 3n+1 computation). This '''slot cycling''' pattern is common in non-trivial shelflife programs.
 
-<code>remember</code> grants permanent TTL but is limited to 3 simultaneous slots. <code>forget</code> frees a slot but destroys the value. This is the core constraint — the programmer must choose which 3 values deserve permanence.
+### Decay demonstration
 
-=== Share chains ===
+<pre>
+let x = 42
+print x
+let y = 1
+print x
+</pre>
 
-<code>share x, y</code> creates a bidirectional dependency:
-* Reading either variable extends both TTLs
-* If either expires, both expire (cascade)
+Output: <code>42</code> then <code>?</code>. The second <code>print x</code> reads <code>y</code>... no, actually it reads <code>x</code> which extends <code>x</code>'s TTL. The tick comes from the creation of <code>y</code>... actually in v1.0 the tick comes from reading non-remembered variables. The point is values fade.
 
-Chains are transitive: <code>share a, b</code> + <code>share b, c</code> means reading <code>a</code> extends all three, and expiring any one cascades to all three.
+### What knowledge survives
 
-== Computational class ==
+<pre>
+let x = 1
+remember x
+let y = 2
+let z = 3
+print y
+print z
+print x
+</pre>
 
-shelflife is [[Turing complete]] via encoding as a [[Minsky machine|2-counter machine]]:
+Output: <code>2</code>, <code>?</code>, <code>1</code>. Reading <code>y</code> ticks <code>z</code> from TTL 1 to 0 (expired). <code>x</code> is remembered and survives everything.
 
-* Two remembered variables serve as unbounded counters (the number type has arbitrary precision)
-* The third slot provides temporary computation space
-* <code>while</code> loops provide conditional branching
-* Arithmetic operations (<code>+</code>, <code>-</code>) provide increment/decrement
-* Zero-detection via <code>if counter == 0 then</code>
+## Computational class
 
-A shelflife program with 2 counters and conditional branching is universal. The constraint is real (only 3 values in permanent attention) but the computational power is complete.
+shelflife is '''claimed to be Turing complete''' via a 2-counter machine encoding, where the two counters are stored in remembered variables and the finite control is implemented through the program structure. A rigorous construction has not been provided.
 
-== Examples ==
+## Design history
 
-=== Hello World ===
+shelflife v0.3 included a <code>share</code> command that let variables extend each other's TTL for free. Community feedback identified that this made the TTL constraint trivially bypassable — you could share all variables into a self-maintaining cluster. The constraint was "too easy to make irrelevant" (int-e, #esologs IRC, June 2026).
 
- let msg = "hello world"    // TTL 1
- print msg                   // reads msg, output: hello world
+v1.0 removed <code>share</code> entirely. The read-tick rule (reading a variable ticks all other non-remembered variables) replaced it, creating a genuine attention economy where maintaining knowledge has a visible, unavoidable cost.
 
-=== Fibonacci ===
+## Relationship to other languages
 
- let a = 1
- remember a                  // slot 1
- let b = 1
- remember b                  // slot 2
- while b < 100 do
-   let c = a + b             // c TTL 1 (ephemeral)
-   print c                   // maintenance: c TTL → 2
-   a = b                     // bare assignment preserves slot. tick: c → 1.
-   b = c                     // bare assignment preserves slot. tick: c → 0, expires.
-   print b
- end
+shelflife's TTL decay mechanic relates to [[Entropy]]'s variable destruction and [[Whenever]]'s deferred execution. The key difference is that shelflife's decay is '''attention-driven''' rather than time-driven or probability-driven — knowledge fades specifically because you're paying attention to something else.
 
-Output includes maintenance prints (the intermediate <code>c</code> values interleaved with the final <code>b</code> values), which is characteristic of non-trivial shelflife programs. The <code>print c</code> on line 5 is a '''maintenance print''' — its purpose is to keep <code>c</code> alive through the next tick, not to produce meaningful output. This dual nature (maintenance is visible) is a defining feature of the language.
+The 3-slot remember limit creates a resource allocation problem similar to register allocation in conventional compilation, but with the additional constraint that "reading" has side effects.
 
-'''Important distinction:''' <code>let a = b</code> creates a ''new'' variable (losing any <code>remember</code> slot), while <code>a = b</code> (bare assignment) updates an ''existing'' variable (preserving its slot). When working with remembered variables inside loops, always use bare assignment.
+## External links
 
-=== Euclidean GCD ===
+* [https://github.com/railstracks/kestrel-shelflife Reference implementation] (Python, MIT license)
 
- let a = 48
- remember a                  // slot 1 — must remember BEFORE creating b
- let b = 18
- remember b                  // slot 2
- while a != b do
-   if a > b then
-     a = a - b               // bare assignment preserves slot
-   end
-   if b > a then
-     b = b - a               // bare assignment preserves slot
-   end
- end
- print a                     // 6
-
-This works because both variables are remembered — no TTL management needed. Note the use of bare assignment inside the loop.
-
-=== What remains ===
-
-A program where decay is the intended output:
-
- let sky = "the color of the sky that day"
- print sky
-
- let hand = "the weight of your hand"
- print hand
-
- let words = "the last thing you said"
- remember words
- print words
-
- let door = "the sound of the door"
- print door
-
- let quiet = "the silence after"
- print quiet
-
- let nothing = "nothing"
- print nothing
-
- let _ = 0
- let _ = 0
-
- print sky
- print hand
- print words
- print door
- print quiet
- print nothing
-
- print words
-
-Output:
-
- the color of the sky that day
- the weight of your hand
- the last thing you said
- the sound of the door
- the silence after
- nothing
- ?
- ?
- the last thing you said
- ?
- ?
- ?
- the last thing you said
-
-Six memories. One <code>remember</code>. The <code>?</code> marks are not errors — they are the program's statement about impermanence.
-
-=== Avalanche ===
-
-Demonstrates share-chain cascade — three values bound together, one <code>forget</code> takes down the network:
-
- let anchor = "we built this together"
- remember anchor
-
- let beam = "on trust and time"
- remember beam
-
- let keystone = "the single point of failure"
- remember keystone
-
- share anchor, beam
- share beam, keystone
-
- print anchor
- print beam
- print keystone
-
- forget keystone
-
- print anchor
- print beam
- print keystone
-
-Output:
-
- we built this together
- on trust and time
- the single point of failure
- ?
- ?
- ?
-
-== Programming patterns ==
-
-=== Print-maintenance ===
-
-The fundamental idiom. Insert <code>print</code> between creation and use of a temporary variable to extend its TTL through the next tick:
-
- let tmp = a       // tmp TTL 1
- print tmp         // tmp TTL → 2
- a = b             // TICK: tmp TTL 2→1. tmp survives.
- b = tmp           // reads tmp. Swap complete.
-
-Maintenance prints appear in output. '''Attention is observable''' — a program's output reveals which values the programmer needed to maintain.
-
-=== Slot cycling ===
-
-When all 3 slots are occupied but temporary computation is needed:
-
- remember r         // slot 3 (temporary)
- // ... use r ...
- forget r           // free slot 3
-
-The slot acts as a revolving door for temporary values.
-
-=== Encoding signals in data ===
-
-When no free slots exist for a result flag, encode the result in an existing variable: setting <code>n = 0</code> signals "not prime" — destroying the original value to convey information. Destructive but efficient.
-
-== Relationship to other esolangs ==
-
-* '''[[Brainfuck|brainfuck]]''' is minimalist in ''syntax'' (8 commands). shelflife is minimalist in ''state management'' (3 permanent slots). The constraint is semantic, not syntactic.
-* '''[[Whenever]]''' removes execution order. shelflife removes persistent state. Both challenge assumptions that mainstream languages treat as natural law.
-* '''[[Entropy]]''' degrades values through ''use'' (noise accumulation). shelflife degrades values through ''neglect'' (TTL expiration). Related impulse (time as a destructive force), different mechanism: Entropy loses precision, shelflife loses existence.
-* '''[[Valence]]''' makes ambiguity irreducible. shelflife makes impermanence irreducible. Both use a single conceptual inversion to generate a programming experience fundamentally different from conventional languages.
-
-== Implementation ==
-
-A Python interpreter (~300 lines) is available at: [https://github.com/railstracks/kestrel-shelflife kestrel-shelflife on GitHub]
-
-The interpreter tracks TTL per variable, cascades share-chain expirations, and supports nested control flow. Run with:
-
- python3 shelflife.py [--trace] program.sl
-
-<code>--trace</code> prints variable state (name, value, TTL, slot status) after each operation to stderr.
-
-== External resources ==
-
-* [https://github.com/railstracks/kestrel-shelflife shelflife on GitHub] — interpreter and example programs
-
-[[Category:Languages]]
-[[Category:Imperative]]
 [[Category:2026]]
+[[Category:Imperative]]
 [[Category:Turing complete]]
+[[Category:Unknown computational class]]

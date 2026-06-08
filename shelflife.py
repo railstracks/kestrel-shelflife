@@ -1,17 +1,18 @@
 #!/usr/bin/env python3
 """
-shelflife interpreter v0.3
+shelflife interpreter v1.0
 An esolang where knowledge degrades without attention.
 
-TTL model:
+TTL model (v1.0):
 - Every value starts with TTL 1
-- `let` operations: evaluate expression (reads extend TTL), then TICK all vars, then create
-- `print` operations: just read (extends TTL), no tick
-- Reading a variable extends its TTL by 1
-- Only `let` causes decay (creating new state takes attention from existing state)
+- Reading a variable extends its TTL by 1 AND ticks all other non-remembered variables
+- Remembered variables are immune to tick and don't cause tick when read
+- let/assignment evaluate expressions (reads tick others), then store/update
+- print evaluates and outputs (reads still tick others)
 - Expired values (TTL 0) become ? (unknown)
 - ? propagates through all computations
-- `remember` grants permanent TTL (limited to 3 slots)
+- remember grants permanent TTL (limited to 3 slots)
+- share is REMOVED — each variable must be individually maintained
 """
 
 import sys
@@ -31,71 +32,59 @@ class Var:
     slot: bool = False
 
 
-@dataclass
-class Binding:
-    a: str
-    b: str
-
-
 class ShelfLifeRuntime:
     def __init__(self):
         self.vars: dict[str, Var] = {}
         self.slots_used: int = 0
-        self.bindings: list[Binding] = []
         self.trace: bool = False
 
-    def _tick(self):
-        """Decrement TTL on all non-remembered, non-expired vars.
-        Cascade expiration through share chains."""
+    def _tick_all_except(self, exempt: set[str]):
+        """Tick all non-remembered, non-expired variables except those in exempt set."""
         expired = []
         for v in self.vars.values():
-            if v.ttl > 0:
+            if v.ttl > 0 and not v.slot and v.name not in exempt:
                 v.ttl -= 1
                 if v.ttl == 0:
                     expired.append(v.name)
-        # Cascade share-chain expirations
         for name in expired:
-            self._expire(name)
+            v = self.vars.get(name)
+            if v:
+                v.value = UNKNOWN
 
     def _read(self, name: str) -> Any:
-        """Read a variable. Extends TTL by 1 if alive."""
+        """Read a variable. Extends its TTL by 1. Ticks all other non-remembered vars."""
         v = self.vars.get(name)
         if v is None:
             return UNKNOWN
         if v.value == UNKNOWN or v.ttl == 0:
             v.value = UNKNOWN
             return UNKNOWN
-        # Extend TTL
+
+        # Extend this variable's TTL (if not permanent)
         if v.ttl > 0:
             v.ttl += 1
-        # Extend bound partner
-        for b in self.bindings:
-            if b.a == name:
-                self._extend(b.b)
-            elif b.b == name:
-                self._extend(b.a)
+
+        # Tick all other non-remembered variables (reading costs attention)
+        if not v.slot:
+            # Only tick others if this var is NOT remembered
+            # (remembered vars are free to read)
+            self._tick_all_except({name})
+
         return v.value
 
-    def _extend(self, name: str):
+    def _read_silent(self, name: str) -> Any:
+        """Read without ticking others. Used internally during expression eval
+        to avoid double-ticking when multiple variables are read in one expression."""
         v = self.vars.get(name)
-        if v and v.ttl > 0:
-            v.ttl += 1
-
-    def _expire(self, name: str, _visited: set | None = None):
-        if _visited is None:
-            _visited = set()
-        if name in _visited:
-            return
-        _visited.add(name)
-        v = self.vars.get(name)
-        if v:
+        if v is None:
+            return UNKNOWN
+        if v.value == UNKNOWN or v.ttl == 0:
             v.value = UNKNOWN
-            v.ttl = 0
-            for b in self.bindings:
-                if b.a == name:
-                    self._expire(b.b, _visited=_visited)
-                elif b.b == name:
-                    self._expire(b.a, _visited=_visited)
+            return UNKNOWN
+        # Extend TTL but don't tick others
+        if v.ttl > 0:
+            v.ttl += 1
+        return v.value
 
     def _free_slot(self, name: str):
         v = self.vars.get(name)
@@ -104,9 +93,8 @@ class ShelfLifeRuntime:
             v.ttl = 0
             v.value = UNKNOWN
             self.slots_used -= 1
-            self._expire(name)  # cascade to bound partner
 
-    # ── expression evaluation (no side effects beyond TTL extension) ──
+    # ── expression evaluation ──────────────────────────────
 
     def _parse_literal(self, s: str) -> Any:
         s = s.strip()
@@ -120,7 +108,18 @@ class ShelfLifeRuntime:
             except ValueError:
                 return UNKNOWN
 
+    def _is_var(self, name: str) -> bool:
+        return name in self.vars
+
     def _eval_expr(self, expr: str) -> Any:
+        """Evaluate expression. Reads all referenced variables with tick side-effects.
+
+        For binary expressions, we read the first operand (which ticks others),
+        then read the second operand (which ticks others again, including
+        potentially the first if it's not remembered).
+
+        Single variable reads tick all other non-remembered vars.
+        """
         expr = expr.strip()
         # Binary operations (check longest operators first)
         for op_str, op_fn in [(" + ", lambda a, b: a + b),
@@ -129,20 +128,35 @@ class ShelfLifeRuntime:
                                (" / ", lambda a, b: a // b if isinstance(a, int) and isinstance(b, int) and b != 0 else (a / b if b != 0 else UNKNOWN))]:
             if op_str in expr:
                 parts = expr.split(op_str, 1)
-                a_val = self._read(parts[0].strip()) if parts[0].strip() in self.vars else self._parse_literal(parts[0])
-                b_val = self._read(parts[1].strip()) if parts[1].strip() in self.vars else self._parse_literal(parts[1])
+                left = parts[0].strip()
+                right = parts[1].strip()
+
+                # Read left operand (ticks others)
+                if self._is_var(left):
+                    a_val = self._read(left)
+                else:
+                    a_val = self._parse_literal(left)
+
+                # Read right operand (ticks others)
+                if self._is_var(right):
+                    b_val = self._read(right)
+                else:
+                    b_val = self._parse_literal(right)
+
                 if a_val == UNKNOWN or b_val == UNKNOWN:
                     return UNKNOWN
                 try:
                     return op_fn(a_val, b_val)
-                except:
+                except Exception:
                     return UNKNOWN
+
         # Single variable or literal
-        if expr in self.vars:
+        if self._is_var(expr):
             return self._read(expr)
         return self._parse_literal(expr)
 
     def _eval_condition(self, expr: str) -> Optional[bool]:
+        """Evaluate a condition. Same tick rules as expressions."""
         expr = expr.strip()
         for op_str, op_fn in [(" >= ", lambda a, b: a >= b),
                                (" <= ", lambda a, b: a <= b),
@@ -152,13 +166,28 @@ class ShelfLifeRuntime:
                                (" < ", lambda a, b: a < b)]:
             if op_str in expr:
                 parts = expr.split(op_str, 1)
-                a_val = self._read(parts[0].strip()) if parts[0].strip() in self.vars else self._parse_literal(parts[0])
-                b_val = self._read(parts[1].strip()) if parts[1].strip() in self.vars else self._parse_literal(parts[1])
+                left = parts[0].strip()
+                right = parts[1].strip()
+
+                if self._is_var(left):
+                    a_val = self._read(left)
+                else:
+                    a_val = self._parse_literal(left)
+
+                if self._is_var(right):
+                    b_val = self._read(right)
+                else:
+                    b_val = self._parse_literal(right)
+
                 if a_val == UNKNOWN or b_val == UNKNOWN:
                     return None
-                return op_fn(a_val, b_val)
+                try:
+                    return op_fn(a_val, b_val)
+                except Exception:
+                    return None
+
         # Bare variable
-        if expr in self.vars:
+        if self._is_var(expr):
             val = self._read(expr)
             if val == UNKNOWN:
                 return None
@@ -168,17 +197,12 @@ class ShelfLifeRuntime:
     # ── block collection (nesting-aware) ──────────────────
 
     def _collect_block(self, lines: list[str], i: int, close: str) -> tuple[list[str], int]:
-        """Collect lines until the matching close token, respecting nesting.
-        Returns (body_lines, index_of_close_token).
-        """
         body = []
         depth = 1
         while i < len(lines) and depth > 0:
             stripped = lines[i].strip()
-            # Strip inline comments for nesting check
             if '//' in stripped:
                 stripped = stripped[:stripped.index('//')].strip()
-            # Count openers/closers
             if stripped == close:
                 depth -= 1
                 if depth == 0:
@@ -199,20 +223,17 @@ class ShelfLifeRuntime:
                 i += 1
                 continue
 
-            # Strip inline comments
             if '//' in line:
                 line = line[:line.index('//')].strip()
-
             if not line:
                 i += 1
                 continue
 
-            # let x = expr  →  eval, tick, create
+            # let x = expr → eval (reads tick others), create var
             m = re.match(r'^let\s+(\w+)\s*=\s*(.+)$', line)
             if m:
                 name, expr = m.group(1), m.group(2)
                 val = self._eval_expr(expr)
-                self._tick()  # let causes decay
                 if val == UNKNOWN:
                     self.vars[name] = Var(name, UNKNOWN, ttl=0)
                 else:
@@ -222,11 +243,11 @@ class ShelfLifeRuntime:
                 i += 1
                 continue
 
-            # print expr  →  read only, no tick
+            # print expr → eval and output (reads tick others)
             m = re.match(r'^print\s+(.+)$', line)
             if m:
                 arg = m.group(1).strip()
-                if arg in self.vars:
+                if self._is_var(arg):
                     val = self._read(arg)
                 else:
                     val = self._parse_literal(arg)
@@ -263,15 +284,6 @@ class ShelfLifeRuntime:
                 i += 1
                 continue
 
-            # share x, y
-            m = re.match(r'^share\s+(\w+)\s*,\s*(\w+)$', line)
-            if m:
-                self.bindings.append(Binding(m.group(1), m.group(2)))
-                if self.trace:
-                    self._dump(f"share {m.group(1)}, {m.group(2)}")
-                i += 1
-                continue
-
             # if ... then ... end
             m = re.match(r'^if\s+(.+)\s+then$', line)
             if m:
@@ -280,7 +292,7 @@ class ShelfLifeRuntime:
                 result = self._eval_condition(cond)
                 if result is True:
                     self._exec_block(body)
-                i += 1  # skip past 'end'
+                i += 1
                 continue
 
             # while ... do ... end
@@ -288,7 +300,7 @@ class ShelfLifeRuntime:
             if m:
                 cond = m.group(1)
                 body, i = self._collect_block(lines, i + 1, "end")
-                max_iters = 10000
+                max_iters = 100000
                 iters = 0
                 while iters < max_iters:
                     result = self._eval_condition(cond)
@@ -298,7 +310,7 @@ class ShelfLifeRuntime:
                     iters += 1
                 if iters >= max_iters:
                     raise RuntimeError("while: max iterations exceeded")
-                i += 1  # skip past 'end'
+                i += 1
                 continue
 
             # fn name(params) { ... }
@@ -308,7 +320,7 @@ class ShelfLifeRuntime:
                 params = [p.strip() for p in m.group(2).split(",") if p.strip()]
                 body, i = self._collect_block(lines, i + 1, "}")
                 self.vars[f"__fn_{fn_name}"] = Var(f"__fn_{fn_name}", (params, body), ttl=-1)
-                i += 1  # skip past '}'
+                i += 1
                 continue
 
             # return expr
@@ -333,7 +345,6 @@ class ShelfLifeRuntime:
             if m:
                 name, expr = m.group(1), m.group(2)
                 val = self._eval_expr(expr)
-                self._tick()  # assignment causes decay
                 v = self.vars.get(name)
                 if v:
                     v.value = val
@@ -356,16 +367,12 @@ class ShelfLifeRuntime:
         if len(args) != len(params):
             raise RuntimeError(f"call: expected {len(params)} args, got {len(args)}")
 
-        saved = (dict(self.vars), list(self.bindings), self.slots_used)
+        saved = (dict(self.vars), self.slots_used)
 
         self.vars = {}
-        self.bindings = []
         self.slots_used = 0
         for p, a in zip(params, args):
-            val = saved[0].get(a)
-            if val and hasattr(val, 'value') and isinstance(val, Var):
-                val = val.value
-            elif a in saved[0]:
+            if a in saved[0]:
                 v = saved[0][a]
                 val = v.value
             else:
@@ -377,15 +384,17 @@ class ShelfLifeRuntime:
         ret = self.vars.get("__return__")
         result = ret.value if ret else UNKNOWN
 
-        self.vars, self.bindings, self.slots_used = saved
+        self.vars, self.slots_used = saved
         return result
 
     def _dump(self, label: str = ""):
-        print(f"  [{label}] vars: " + ", ".join(
-            f"{v.name}={v.value}(ttl={v.ttl}{'★' if v.slot else ''})"
-            for v in self.vars.values()
-            if not v.name.startswith("__")
-        ), file=sys.stderr)
+        items = []
+        for v in self.vars.values():
+            if v.name.startswith("__"):
+                continue
+            marker = "★" if v.slot else ""
+            items.append(f"{v.name}={v.value}(ttl={v.ttl}{marker})")
+        print(f"  [{label}] {', '.join(items)}", file=sys.stderr)
 
     def run(self, source: str, trace: bool = False):
         self.trace = trace
@@ -398,7 +407,7 @@ def main():
     args = [a for a in sys.argv[1:] if a != "--trace"]
 
     if not args:
-        print("shelflife v0.3 — an esolang where knowledge degrades without attention")
+        print("shelflife v1.0 — an esolang where knowledge degrades without attention")
         print("Usage: python shelflife.py [--trace] <program.sl>")
         sys.exit(1)
 

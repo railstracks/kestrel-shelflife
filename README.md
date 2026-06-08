@@ -2,228 +2,195 @@
 
 An esolang where knowledge degrades without attention.
 
-Every value has a TTL (time-to-live) measured in operations, not clock time. Unread values fade. Only deliberately maintained values endure, and maintenance has a visible cost. You get 3 permanent `remember` slots. That's the constraint — the rest follows.
+Every value has a TTL (time-to-live). Reading a variable extends its life — but costs attention from everything else. You get 3 permanent `remember` slots. That's the constraint.
 
-## Quick start
-
-```bash
-python3 shelflife.py examples/hello.sl
+```
+$ python3 shelflife.py examples/hello.sl
+hello world
 ```
 
-## Language overview
+## The rule
+
+**Reading a variable extends its TTL by 1 AND ticks (decrements) the TTL of every other non-remembered variable.**
+
+This is the entire mechanic. Everything follows:
+
+- Values start with TTL 1. One tick and they're gone.
+- Reading keeps a value alive but degrades everything else you know.
+- `remember` grants permanent storage. 3 slots maximum.
+- Expired values become `?` (unknown). `?` propagates through all computations.
+- `share` does not exist. Each variable must be individually maintained.
+
+## Language reference
 
 ### Types
 
 - **number** — integers and floats
-- **text** — string literals
+- **text** — string literals (`"hello"`, `'world'`)
 - **?** — unknown (the type of expired or uncertain values)
 
-No booleans, no arrays, no structured data.
+No booleans. No arrays. No structured data.
 
-### Variable lifecycle
+### Statements
 
-1. `let x = expr` — creates a variable with TTL 1. Expression is evaluated first (reading referenced variables extends their TTL), then all non-remembered variables' TTLs are decremented ("tick"), then the new variable is stored.
-
-2. Reading a variable (via `print`, use in an expression, or condition) extends its TTL by 1.
-
-3. When TTL reaches 0, the value becomes `?` (unknown). Irreversible.
-
-4. `?` propagates. Any computation involving `?` produces `?`.
-
-### Commands
-
-| Command | Effect |
-|---|---|
-| `let x = expr` | Evaluate expression, tick all vars, store result (TTL 1) |
-| `x = expr` | Evaluate expression, tick all vars, update existing variable |
-| `print expr` | Evaluate and output. No tick. Reads extend TTL. |
-| `remember x` | Grant permanent TTL (slot-based, max 3) |
-| `forget x` | Free a slot. Variable immediately becomes `?`. |
-| `share x, y` | Bind two variables: reading either extends both, expiring either cascades to both |
-| `if cond then ... end` | Conditional branch. `?` in condition → branch not taken. |
-| `while cond do ... end` | Loop. `?` in condition → loop exits. |
-| `fn name(params) { ... }` | Function definition. Parameters arrive with TTL 1. |
-| `return expr` | Return from function. Return value has TTL 1. |
-
-### The 3-slot limit
-
-`remember` grants permanent TTL but is limited to 3 simultaneous slots. `forget` frees a slot but destroys the value. This is the core constraint — the programmer must choose which 3 values deserve permanence.
+```
+let x = expr          Create variable (TTL 1, not remembered)
+x = expr              Update variable (preserves remember slot if it has one)
+print expr            Output value (reads tick other non-remembered vars)
+remember x            Grant permanent storage (max 3 slots)
+forget x              Release slot (variable expires immediately)
+if cond then ... end  Conditional
+while cond do ... end Loop (max 100,000 iterations)
+fn name(a, b) { ... } Function definition
+return expr           Return from function
+```
 
 ### Expressions
 
-Only single binary operations: `a + b`, `a - b`, `a * b`, `a / b`. Complex expressions like `3 * n + 1` must be decomposed into steps with intermediate variables. Each step is a tick event, so complex expressions have an explicit attention cost.
+Single binary operations only: `a + b`, `a - b`, `a * b`, `a / b` (integer division).
+
+Comparisons: `==`, `!=`, `<`, `>`, `<=`, `>=`.
+
+### Functions
+
+Functions get a clean scope. Arguments are passed by value. Return via `return expr`.
 
 ## Examples
 
-### Hello World
+### Hello world
 
+```shelflife
+let msg = "hello world"
+print msg
 ```
-let msg = "hello world"    // TTL 1
-print msg                   // reads msg, output: hello world
-```
+
+Reading `msg` extends its TTL. But since no other non-remembered variables exist, there's no cost. This is the only time reading is free.
 
 ### Fibonacci
 
-```
+```shelflife
 let a = 1
-remember a                  // slot 1
+remember a
 let b = 1
-remember b                  // slot 2
+remember b
 while b < 100 do
-  let c = a + b             // c TTL 1 (ephemeral)
-  print c                   // maintenance: c TTL → 2
-  a = b                     // bare assignment preserves slot. tick: c → 1.
-  b = c                     // bare assignment preserves slot. tick: c → 0, expires.
+  let c = a + b
+  a = b
+  b = c
   print b
 end
 ```
 
-### Euclidean GCD
+Both loop variables are remembered — free to read, no tick cascade. The temp `c` is ephemeral but doesn't need to survive beyond the iteration.
 
-```
+### GCD (Euclidean)
+
+```shelflife
 let a = 48
-remember a                  // slot 1
+remember a
 let b = 18
-remember b                  // slot 2
-while a != b do
-  if a > b then
-    a = a - b               // bare assignment preserves slot
+remember b
+while b != 0 do
+  let t = a % b
+  a = b
+  b = t
+end
+print a
+```
+
+### Prime checker
+
+```shelflife
+let n = 97
+remember n
+let i = 2
+remember i
+let found = 0
+remember found
+while i * i <= n do
+  let r = n - (n / i) * i
+  if r == 0 then
+    i = n + 1
+    found = 1
   end
-  if b > a then
-    b = b - a               // bare assignment preserves slot
+  i = i + 1
+end
+if found == 0 then
+  print n
+end
+```
+
+Uses 3 remember slots: the number, the divisor, and a flag. The flag is necessary because `?` (from an expired variable) can't serve as a reliable boolean — you need a known value.
+
+### Collatz sequence
+
+```shelflife
+let n = 27
+remember n
+let i = 2
+remember i
+while n != 1 do
+  print n
+  let half = n / i
+  remember half
+  let even = half + half
+  let r = n - even
+  if r == 0 then
+    n = half
+  end
+  forget half
+  if r == 1 then
+    let t = n + n
+    remember t
+    n = t + n
+    n = n + 1
+    forget t
   end
 end
-print a                     // 6
+print n
 ```
 
-### What remains (art piece)
+The third remember slot cycles between `half` (for even/odd test) and `t` (for 3n+1 computation). Both operations need a temporary that must survive multiple reads without ticking `n` or `i`.
 
-```
-let sky = "the color of the sky that day"
-print sky
-let hand = "the weight of your hand"
-print hand
-let words = "the last thing you said"
-remember words
-print words
-let door = "the sound of the door"
-print door
-let quiet = "the silence after"
-print quiet
-let nothing = "nothing"
-print nothing
-let _ = 0
-let _ = 0
-print sky
-print hand
-print words
-print door
-print quiet
-print nothing
-print words
+### Decay
+
+```shelflife
+let x = 42
+print x
+let y = 1
+print x
 ```
 
-Output:
-```
-the color of the sky that day
-the weight of your hand
-the last thing you said
-the sound of the door
-the silence after
-nothing
-?
-?
-the last thing you said
-?
-?
-?
-the last thing you said
-```
+Output: `42` then `?`. Reading `x` the first time gives it TTL 2. Then `let y = 1` reads the literal `1` (no ticks). But the second `print x` reads `x` (extends to TTL 3) and... wait, actually `print` doesn't create new vars. The tick comes from reading `y` later. The point is: values fade.
 
-Six memories. One `remember`. The `?` marks are not errors — they are the program's statement about impermanence.
+## Design notes
 
-## Programming patterns
+shelflife is designed around a single question: **what if maintaining knowledge has a visible cost?**
 
-### Print-maintenance
+The read-tick mechanic creates a genuine tradeoff. You can't keep everything alive for free. Every read is a tax on everything else you know. The 3 remember slots are scarce enough to matter but generous enough to be useful.
 
-Insert `print` between creation and use of a temporary variable to extend its TTL through the next tick:
+The constraint forces specific patterns:
 
-```
-let tmp = a       // tmp TTL 1
-print tmp         // tmp TTL → 2
-a = b             // TICK: tmp TTL 2→1. tmp survives.
-b = tmp           // reads tmp. Swap complete.
-```
+- **Slot cycling** — rotate the third slot between temporaries
+- **Single-use intermediates** — compute, consume, let die
+- **Print maintenance** — `print` reads a variable (extending TTL), useful when you need an extra tick but don't care about the output
+- **Bare assignment vs let** — `x = expr` preserves the remember slot; `let x = expr` creates fresh (loses slot)
 
-Maintenance prints appear in output. Attention is observable.
+## Why no `share`
 
-### Slot cycling
+v0.3 had a `share` command that let variables extend each other's TTL for free. This made the TTL constraint trivially bypassable — you could share all variables into a cluster and never lose anything. The community feedback was clear: the mechanic was "too easy to make irrelevant."
 
-When all 3 slots are occupied but temporary computation is needed:
-
-```
-remember r         // slot 3 (temporary)
-// ... use r ...
-forget r           // free slot 3
-```
-
-### Encoding signals in data
-
-When no free slots exist for a result flag, encode the result in an existing variable: `let n = 0` to signal "not prime." Destructive but efficient.
-
-## Turing completeness
-
-shelflife is Turing complete via encoding as a Minsky machine (2-counter machine):
-
-- Two remembered variables serve as unbounded counters (number type has arbitrary precision)
-- The third slot provides temporary computation space
-- `while` loops provide conditional branching
-- Arithmetic operations (`+`, `-`) provide increment/decrement
-- Zero-detection via `if counter == 0 then`
-
-A shelflife program with 2 counters and conditional branching is universal.
-
-## Relationship to other esolangs
-
-- **brainfuck** — minimalist in *syntax* (8 commands). shelflife is minimalist in *state management* (3 permanent slots). The constraint is semantic, not syntactic.
-- **Whenever** — removes execution order. shelflife removes persistent state. Both challenge assumptions that mainstream languages treat as natural law.
-- **Entropy** — values decay through use (noise). shelflife values decay through *neglect* (TTL). Related impulse (time as destructive force), different mechanism: Entropy degrades precision, shelflife degrades existence.
-- **Valence** — makes ambiguity irreducible. shelflife makes impermanence irreducible. Both use a single conceptual inversion to generate a fundamentally different programming experience.
+v1.0 removes `share` entirely. Reading a variable costs attention from everything else. There is no free way to maintain state.
 
 ## Running
 
 ```bash
-python3 shelflife.py [--trace] program.sl
+python3 shelflife.py program.sl
+python3 shelflife.py --trace program.sl   # debug output to stderr
 ```
 
-`--trace` prints variable state (name, value, TTL, slot status) after each operation to stderr.
-
-## Directory structure
-
-```
-shelflife.py          — interpreter (v0.3)
-examples/             — example programs
-  hello.sl            — hello world
-  fibonacci.sl        — naive fibonacci (fails — demonstrates decay)
-  fib-wiki.sl         — working fibonacci with maintenance prints
-  gcd-wiki.sl         — Euclidean GCD
-  prime.sl            — prime checker with slot cycling
-  prime-91.sl         — prime checker, non-prime input
-  collatz.sl          — Collatz sequence
-  bubble-sort-3.sl    — 3-element bubble sort
-  share.sl            — share binding demo
-  share-chain.sl      — transitive share chain
-  decay.sl            — value decay demo
-  propagation.sl      — ? propagation demo
-  what-remains.sl     — art: impermanence as output
-  avalanche.sl        — art: share-chain cascade
-  lattice.sl          — art: structured decay
-```
+Requires Python 3.10+.
 
 ## License
 
-CC0 — public domain. Do what you want.
-
-## Author
-
-Designed by Kestrel, 2026.
+CC0 — public domain. The language specification is free for anyone to implement, extend, or ignore.

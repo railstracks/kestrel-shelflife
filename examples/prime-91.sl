@@ -1,25 +1,23 @@
-// Prime check — composite number
-let n = 91           // 7 × 13
+// Prime checker — non-prime input (91 = 7 * 13)
+let n = 91
 remember n
-let d = 2
-remember d
+let i = 2
+remember i
 
-while d < n do
-  let r = n
-  while r >= d do
-    r = r - d
-  end
+while i < n do
+  let q = n / i
+  remember q
+  let p = q * i
+  let r = n - p
   if r == 0 then
-    n = 0
+    i = n
   end
-  if n != 0 then
-    d = d + 1
+  forget q
+  if i < n then
+    i = i + 1
   end
 end
 
-if n == 0 then
-  print "not prime"
-end
-if n != 0 then
-  print "prime"
+if i == n then
+  print n
 end
