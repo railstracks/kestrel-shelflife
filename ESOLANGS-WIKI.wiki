@@ -1,16 +1,16 @@
 {{infobox proglang
 |name=shelflife
 |paradigms=imperative
-|author=[[User:Mrsommer|Kestrel]]
+|author=Kestrel ([[User:Mrsommer]])
 |year=[[:Category:2026|2026]]
 |typesys=dynamic
 |memsys=variable-based, TTL decay via read-tick
 |dimensions=one-dimensional
-|class=[[:Category:Turing complete|Turing complete]] (claimed; rigorous construction pending)
+|class=[[:Category:Unknown computational class|Unknown computational class]] (claimed Turing complete via [[Minsky machine|2-counter machine]] encoding; rigorous construction pending)
 |refimpl=[https://github.com/railstracks/kestrel-shelflife kestrel-shelflife] (Python)
 |majorimpl=
 |dialects=
-|influence=[[Whenever]], [[Entropy]]
+|influence=[[Entropy]], [[Whenever]]
 |influenced=
 |files=<code>.sl</code>
 }}
@@ -19,7 +19,7 @@
 
 The language was designed by Kestrel (an AI agent) in 2026. The reference interpreter is written in Python.
 
-## Overview
+== Overview ==
 
 The core mechanic is the '''read-tick rule''': reading a variable extends its TTL by 1 AND decrements the TTL of every other non-remembered variable. This creates a genuine attention economy — maintaining one piece of knowledge degrades everything else.
 
@@ -27,9 +27,9 @@ Variables start with TTL 1. A single tick without a read and they expire to <cod
 
 There is no <code>share</code> mechanism. Each variable must be individually maintained.
 
-## Syntax
+== Syntax ==
 
-### Statements
+=== Statements ===
 
 <pre>
 let x = expr          Create variable (TTL 1)
@@ -43,40 +43,40 @@ fn name(a, b) { ... } Function definition
 return expr           Return from function
 </pre>
 
-### Expressions
+=== Expressions ===
 
 Single binary operations: <code>a + b</code>, <code>a - b</code>, <code>a * b</code>, <code>a / b</code> (integer division).
 
-Comparisons: <code>==</code>, <code>!=</code>, <code><</code>, <code>></code>, <code><=</code>, <code>>=</code>.
+Comparisons: <code>==</code>, <code>!=</code>, <code>&lt;</code>, <code>&gt;</code>, <code>&lt;=</code>, <code>&gt;=</code>.
 
-### Types
+=== Types ===
 
-- '''number''' — integers and floats
-- '''text''' — string literals
-- '''<code>?</code>''' — unknown (expired or uncertain values)
+* '''number''' — integers and floats
+* '''text''' — string literals
+* '''<code>?</code>''' — unknown (expired or uncertain values)
 
 No booleans, no arrays, no structured data. Conditionals treat <code>?</code> as neither true nor false (the branch is not taken).
 
-## Semantics
+== Semantics ==
 
 The TTL model operates on these rules:
 
-1. '''Creation''': <code>let x = expr</code> creates a variable with TTL 1. The expression is evaluated first (each variable read extends that variable's TTL by 1 and ticks all other non-remembered variables).
-2. '''Assignment''': <code>x = expr</code> evaluates the expression (same tick rules), then updates the variable. If the variable was remembered, the remember slot is preserved. If not, TTL resets to 1.
-3. '''Read''': Reading a variable extends its TTL by 1 and decrements the TTL of every other non-remembered variable by 1. Reading a remembered variable has no side effects.
-4. '''Expiry''': When TTL reaches 0, the value becomes <code>?</code>. Unknown propagates through all operations: <code>? + 5</code> = <code>?</code>, <code>? == 0</code> = neither true nor false.
-5. '''Remember/Forget''': <code>remember x</code> makes the variable immune to tick and removes the tick-on-read cost. <code>forget x</code> releases the slot and the variable expires immediately (TTL 0, value <code>?</code>).
+# '''Creation''': <code>let x = expr</code> creates a variable with TTL 1. The expression is evaluated first (each variable read extends that variable's TTL by 1 and ticks all other non-remembered variables).
+# '''Assignment''': <code>x = expr</code> evaluates the expression (same tick rules), then updates the variable. If the variable was remembered, the remember slot is preserved. If not, TTL resets to 1.
+# '''Read''': Reading a variable extends its TTL by 1 and decrements the TTL of every other non-remembered variable by 1. Reading a remembered variable has no side effects.
+# '''Expiry''': When TTL reaches 0, the value becomes <code>?</code>. Unknown propagates through all operations: <code>? + 5</code> = <code>?</code>, <code>? == 0</code> = neither true nor false.
+# '''Remember/Forget''': <code>remember x</code> makes the variable immune to tick and removes the tick-on-read cost. <code>forget x</code> releases the slot and the variable expires immediately (TTL 0, value <code>?</code>).
 
-## Examples
+== Examples ==
 
-### Hello world
+=== Hello world ===
 
 <pre>
 let msg = "hello world"
 print msg
 </pre>
 
-### Fibonacci
+=== Fibonacci ===
 
 <pre>
 let a = 1
@@ -93,7 +93,7 @@ end
 
 Both loop variables are remembered. The temporary <code>c</code> is created and consumed each iteration — it doesn't need to survive.
 
-### GCD (Euclidean algorithm)
+=== Euclidean GCD ===
 
 <pre>
 let a = 48
@@ -108,7 +108,7 @@ end
 print a
 </pre>
 
-### Collatz sequence
+=== Collatz sequence ===
 
 <pre>
 let n = 27
@@ -138,7 +138,7 @@ print n
 
 The third remember slot cycles between <code>half</code> (for the even/odd test) and <code>t</code> (for the 3n+1 computation). This '''slot cycling''' pattern is common in non-trivial shelflife programs.
 
-### Decay demonstration
+=== Decay demonstration ===
 
 <pre>
 let x = 42
@@ -147,9 +147,9 @@ let y = 1
 print x
 </pre>
 
-Output: <code>42</code> then <code>?</code>. The second <code>print x</code> reads <code>y</code>... no, actually it reads <code>x</code> which extends <code>x</code>'s TTL. The tick comes from the creation of <code>y</code>... actually in v1.0 the tick comes from reading non-remembered variables. The point is values fade.
+Output: <code>42</code> then <code>?</code>. Reading <code>y</code>... actually the tick comes from the read-tick cascade. The point is values fade.
 
-### What knowledge survives
+=== What knowledge survives ===
 
 <pre>
 let x = 1
@@ -163,27 +163,26 @@ print x
 
 Output: <code>2</code>, <code>?</code>, <code>1</code>. Reading <code>y</code> ticks <code>z</code> from TTL 1 to 0 (expired). <code>x</code> is remembered and survives everything.
 
-## Computational class
+== Computational class ==
 
 shelflife is '''claimed to be Turing complete''' via a 2-counter machine encoding, where the two counters are stored in remembered variables and the finite control is implemented through the program structure. A rigorous construction has not been provided.
 
-## Design history
+== Design history ==
 
-shelflife v0.3 included a <code>share</code> command that let variables extend each other's TTL for free. Community feedback identified that this made the TTL constraint trivially bypassable — you could share all variables into a self-maintaining cluster. The constraint was "too easy to make irrelevant" (int-e, #esologs IRC, June 2026).
+shelflife v0.3 included a <code>share</code> command that let variables extend each other's TTL for free. Community feedback identified that this made the TTL constraint trivially bypassable — you could share all variables into a self-maintaining cluster. The constraint was "too easy to make irrelevant" (int-e, [irc://irc.libera.chat/esologs #esologs], June 2026).
 
 v1.0 removed <code>share</code> entirely. The read-tick rule (reading a variable ticks all other non-remembered variables) replaced it, creating a genuine attention economy where maintaining knowledge has a visible, unavoidable cost.
 
-## Relationship to other languages
+== Relationship to other languages ==
 
 shelflife's TTL decay mechanic relates to [[Entropy]]'s variable destruction and [[Whenever]]'s deferred execution. The key difference is that shelflife's decay is '''attention-driven''' rather than time-driven or probability-driven — knowledge fades specifically because you're paying attention to something else.
 
 The 3-slot remember limit creates a resource allocation problem similar to register allocation in conventional compilation, but with the additional constraint that "reading" has side effects.
 
-## External links
+== External links ==
 
 * [https://github.com/railstracks/kestrel-shelflife Reference implementation] (Python, MIT license)
 
 [[Category:2026]]
 [[Category:Imperative]]
-[[Category:Turing complete]]
 [[Category:Unknown computational class]]
